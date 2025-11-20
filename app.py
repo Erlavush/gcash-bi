@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, render_template, request
 import os
 import pandas as pd
-import numpy as np  # <--- ADDED THIS (Required for prediction)
+import numpy as np
 import re
 from collections import Counter
 from sklearn.linear_model import LinearRegression
@@ -13,7 +13,7 @@ app = Flask(__name__)
 # ==========================================
 DATA_PATH = os.path.join('data', 'GCASH_REVIEWS.csv')
 
-# Custom Stopwords
+# Custom Stopwords - Expanded to remove generic/useless words
 STOPWORDS = set([
     'the', 'and', 'to', 'a', 'of', 'is', 'in', 'it', 'for', 'my', 'i', 'on', 'with', 'this', 
     'that', 'but', 'so', 'are', 'be', 'have', 'just', 'me', 'not', 'was', 'as', 'or', 'if', 
@@ -22,8 +22,37 @@ STOPWORDS = set([
     'kasi', 'kaya', 'din', 'rin', 'may', 'mga', 'ni', 'kay', 'si', 'namin', 'ako', 'ka',
     'hindi', 'wag', 'nyo', 'niyo', 'sana', 'wala', 'dito', 'para',
     'app', 'gcash', 'application', 'please', 'pls', 'globe', 'account', 'number', 'use', 'time', 
-    'update', 'phone', 'money', 'wallet'
+    'update', 'phone', 'money', 'wallet',
+    # Generic Adjectives / Adverbs (User requested removal)
+    'good', 'bad', 'great', 'nice', 'best', 'better', 'worst', 'terrible', 'excellent', 'amazing',
+    'very', 'really', 'too', 'so', 'much', 'many', 'lot', 'bit', 'little', 'more', 'less',
+    'its', 'im', 'ive', 'dont', 'cant', 'wont', 'didnt', 'doesnt', 'isnt', 'arent', 'wasnt', 'werent',
+    'youre', 'theyre', 'were', 'theres', 'heres', 'thats', 'whats', 'wheres', 'whos', 'hows',
+    'gonna', 'wanna', 'gotta', 'lemme', 'gimme', 'kinda', 'sorta',
+    'please', 'pls', 'plz', 'thanks', 'thank', 'thx', 'ty', 'salamat',
+    'love', 'like', 'hate', 'dislike', 'enjoy', 'prefer',
+    'make', 'made', 'doing', 'did', 'done', 'get', 'got', 'getting', 'go', 'going', 'gone',
+    'know', 'knew', 'known', 'think', 'thought', 'feel', 'felt', 'see', 'saw', 'seen',
+    'use', 'using', 'used', 'user', 'users', 'app', 'apps', 'application', 'applications',
+    'gcash', 'globe', 'paymaya', 'coins', 'coinsph', 'palawan', 'cebuana', 'mlhuillier',
+    'time', 'day', 'week', 'month', 'year', 'today', 'yesterday', 'tomorrow', 'now', 'then',
+    'still', 'even', 'just', 'only', 'also', 'already', 'always', 'never', 'ever', 'sometimes',
+    'back', 'front', 'side', 'top', 'bottom', 'left', 'right', 'center', 'middle',
+    'way', 'ways', 'thing', 'things', 'something', 'anything', 'nothing', 'everything',
+    'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+    'first', 'second', 'third', 'last', 'next', 'previous', 'past', 'future',
+    'people', 'person', 'guy', 'girl', 'man', 'woman', 'kid', 'child', 'friend', 'family',
+    'account', 'accounts', 'profile', 'profiles', 'number', 'numbers', 'mobile', 'mobiles'
 ])
+
+# Business Categories for Smart Classification
+CATEGORIES = {
+    'Technical Stability': ['crash', 'lag', 'slow', 'bug', 'error', 'glitch', 'close', 'freeze', 'hang', 'open'],
+    'Transactions': ['send', 'money', 'transfer', 'cash', 'load', 'refund', 'bank', 'gcredit', 'pay', 'bill'],
+    'Security & Account': ['otp', 'login', 'verify', 'mpin', 'password', 'block', 'hack', 'id', 'verification', 'sim'],
+    'Customer Service': ['support', 'agent', 'ticket', 'service', 'reply', 'chat', 'help', 'email', 'staff'],
+    'User Experience': ['update', 'design', 'interface', 'easy', 'hard', 'confusing', 'feature', 'ad', 'screen']
+}
 
 try:
     print("⏳ Loading dataset...")
@@ -74,6 +103,58 @@ def get_word_frequencies(text_series, top_n=20):
     clean_words = [w for w in words if w not in STOPWORDS and len(w) > 2]
     return Counter(clean_words).most_common(top_n)
 
+def categorize_review(text):
+    """Classifies a review into a business category based on keywords."""
+    text = str(text).lower()
+    for cat, keywords in CATEGORIES.items():
+        if any(k in text for k in keywords):
+            return cat
+    return 'General'
+
+def generate_automated_insights(df_view, monthly_data):
+    """Generates natural language insights based on the current data view."""
+    insights = []
+    
+    if df_view.empty:
+        return []
+
+    # 1. RATING HEALTH
+    avg_rating = df_view['score'].mean()
+    if avg_rating < 3.0:
+        insights.append({
+            "type": "critical", 
+            "title": "Low Customer Satisfaction",
+            "text": f"Average rating is critical ({avg_rating:.2f}). Immediate investigation into recent updates is recommended."
+        })
+    elif avg_rating > 4.2:
+        insights.append({
+            "type": "success", 
+            "title": "High User Sentiment",
+            "text": f"Users are highly satisfied ({avg_rating:.2f}). Current strategy is effective."
+        })
+
+    # 2. TREND DIRECTION
+    if len(monthly_data['ratings']) >= 2:
+        last_month = monthly_data['ratings'][-1]
+        prev_month = monthly_data['ratings'][-2]
+        
+        if last_month is not None and prev_month is not None:
+            diff = last_month - prev_month
+            if diff < -0.5:
+                insights.append({
+                    "type": "warning",
+                    "title": "Negative Trend Detected",
+                    "text": "Satisfaction has dropped significantly compared to the previous period."
+                })
+            elif diff > 0.5:
+                insights.append({
+                    "type": "success",
+                    "title": "Positive Momentum",
+                    "text": "Ratings are improving rapidly compared to the previous period."
+                })
+                
+    return insights
+
 # ==========================================
 # 3. ROUTES
 # ==========================================
@@ -94,7 +175,7 @@ def versions_page():
 def reviews_page():
     return render_template('reviews.html')
 
-# --- API: OVERVIEW (WITH PREDICTION) ---
+# --- API: OVERVIEW (WITH PREDICTION & INSIGHTS) ---
 @app.route('/api/overview')
 def overview():
     try:
@@ -131,7 +212,7 @@ def overview():
             trends = df_view.set_index('at').resample(rule)['score'].mean()
             monthly_data = {
                 'labels': [d.strftime(fmt) for d in trends.index],
-                'ratings': [round(x, 2) if not pd.isna(x) else None for x in trends.tolist()] # Use None for gaps
+                'ratings': [round(x, 2) if not pd.isna(x) else None for x in trends.tolist()] 
             }
 
         # Distribution Chart
@@ -140,6 +221,46 @@ def overview():
             counts = df_view['score'].value_counts().to_dict()
             for k, v in counts.items():
                 rating_dist[str(int(k))] = v
+
+        # --- NEW: CATEGORY ANALYSIS ---
+        category_data = {}
+        if not df_view.empty:
+            # Apply categorization to the current view
+            # Note: For large datasets, this apply might be slow. 
+            # In production, we would pre-compute this column on load.
+            # For this project, we'll do it on the fly or check if we can optimize.
+            # Optimization: Pre-compute on load if possible, but let's stick to on-fly for simplicity unless it's too slow.
+            # Actually, let's pre-compute it on load to be safe.
+            pass # We will handle this by pre-computing in the loading block if we can, or just here.
+            
+            # Let's do it here for now.
+            df_view['category'] = df_view['content'].apply(categorize_review)
+            cat_counts = df_view['category'].value_counts()
+            
+            labels = list(CATEGORIES.keys()) + ['General']
+            data = [int(cat_counts.get(l, 0)) for l in labels]
+            
+            category_data = {
+                'labels': labels,
+                'data': data
+            }
+            
+            # Add category insight
+            top_cat = cat_counts.idxmax()
+            top_cat_count = cat_counts.max()
+            pct = (top_cat_count / total_reviews) * 100
+            
+            # Generate Insights
+            insights = generate_automated_insights(df_view, monthly_data)
+            if top_cat != 'General':
+                insights.append({
+                    "type": "info",
+                    "title": f"Dominant Topic: {top_cat}",
+                    "text": f"{pct:.1f}% of reviews relate to {top_cat}."
+                })
+        else:
+            category_data = {'labels': [], 'data': []}
+            insights = []
 
         # Urgent Issues
         df_urgent = df_global.copy()
@@ -159,44 +280,34 @@ def overview():
                     'date': row['at'].strftime('%Y-%m-%d')
                 })
 
-        # --- IMPROVED PREDICTION LOGIC (TREND LINE) ---
+        # Prediction Logic
         prediction = None
-        
-        # Clean data for regression (Remove Nones)
         valid_indices = [i for i, v in enumerate(monthly_data['ratings']) if v is not None]
         valid_ratings = [monthly_data['ratings'][i] for i in valid_indices]
         
         if len(valid_ratings) >= 3: 
             try:
-                # X = Time steps (0, 1, 2...), y = Ratings
                 X = np.array(valid_indices).reshape(-1, 1)
                 y = np.array(valid_ratings)
-                
-                # Train model
                 model = LinearRegression()
                 model.fit(X, y)
                 
-                # 1. Predict Next Month
-                next_index = len(monthly_data['ratings']) # The step after the last one
+                next_index = len(monthly_data['ratings'])
                 pred_val = model.predict(np.array([[next_index]]))[0]
-                pred_val = max(1.0, min(5.0, pred_val)) # Cap
+                pred_val = max(1.0, min(5.0, pred_val))
                 
-                # 2. Generate Trend Line for the Chart (History + Future)
-                # We generate points for every x in history, plus the future x
                 trend_line = []
-                full_range = list(range(len(monthly_data['ratings']) + 1)) # 0 to N+1
-                
+                full_range = list(range(len(monthly_data['ratings']) + 1))
                 for i in full_range:
                     val = model.predict(np.array([[i]]))[0]
                     trend_line.append(round(max(1.0, min(5.0, val)), 2))
 
                 last_val = valid_ratings[-1]
-                
                 prediction = {
                     'next_month_label': 'Forecast',
                     'predicted_rating': round(pred_val, 2),
                     'trend_direction': 'UP' if pred_val > last_val else 'DOWN',
-                    'trend_line': trend_line # <--- SENDING THIS ARRAY TO JS
+                    'trend_line': trend_line
                 }
             except Exception as e:
                 print(f"Prediction error: {e}")
@@ -210,7 +321,9 @@ def overview():
             'rating_distribution': rating_dist,
             'urgent_reviews': urgent_reviews,
             'available_years': AVAILABLE_YEARS,
-            'prediction': prediction
+            'prediction': prediction,
+            'category_data': category_data,
+            'insights': insights
         })
 
     except Exception as e:

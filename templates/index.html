@@ -143,6 +143,17 @@
                 </div>
             </div>
 
+            <!-- AUTOMATED INSIGHTS PANEL -->
+            <div id="insightsPanel" class="mb-8 hidden animate-fade-in-up">
+                <h2 class="text-xl font-bold text-slate-800 mb-4 flex items-center">
+                    <span class="bg-brand-blue text-white p-2 rounded-lg mr-3 shadow-md">💡</span> 
+                    Automated Intelligence Insights
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="insightsGrid">
+                    <!-- Injected via JS -->
+                </div>
+            </div>
+
             <!-- KPI CARDS -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                 <!-- Total Reviews -->
@@ -205,18 +216,26 @@
 
             <!-- CHARTS GRID -->
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-                <!-- Trend Chart -->
-                <div class="dashboard-card p-6 lg:col-span-2">
+                <!-- Trend Chart (Full Width on Mobile, 2/3 on Large) -->
+                <div class="dashboard-card p-6 lg:col-span-3">
                     <div class="flex justify-between items-center mb-6">
-                        <h3 class="font-bold text-slate-800 text-lg">Rating Trends</h3>
+                        <h3 class="font-bold text-slate-800 text-lg">Rating Trends & Forecast</h3>
                     </div>
                     <div class="h-72 w-full">
                         <canvas id="trendChart"></canvas>
                     </div>
                 </div>
 
+                <!-- Category Chart -->
+                <div class="dashboard-card p-6 lg:col-span-2">
+                    <h3 class="font-bold text-slate-800 text-lg mb-6">Topic Analysis (Issue Categories)</h3>
+                    <div class="h-72 w-full">
+                        <canvas id="categoryChart"></canvas>
+                    </div>
+                </div>
+
                 <!-- Distribution Chart -->
-                <div class="dashboard-card p-6">
+                <div class="dashboard-card p-6 lg:col-span-1">
                     <h3 class="font-bold text-slate-800 text-lg mb-6">Star Distribution</h3>
                     <div class="h-72 w-full">
                         <canvas id="distChart"></canvas>
@@ -272,6 +291,7 @@
         // Global Variables for Charts
         let trendChart = null;
         let distChart = null;
+        let categoryChart = null;
 
         // --- 1. Initialization ---
         document.addEventListener('DOMContentLoaded', () => {
@@ -359,6 +379,42 @@
             // Charts
             renderTrendChart(data.monthly_trends, data.prediction);
             renderDistChart(data.rating_distribution);
+            renderCategoryChart(data.category_data);
+
+            // Insights
+            const insightsPanel = document.getElementById('insightsPanel');
+            const insightsGrid = document.getElementById('insightsGrid');
+            
+            if (data.insights && data.insights.length > 0) {
+                insightsPanel.classList.remove('hidden');
+                insightsGrid.innerHTML = '';
+                data.insights.forEach(insight => {
+                    let colorClass = 'bg-blue-50 border-blue-100 text-blue-800';
+                    let icon = 'ℹ️';
+                    
+                    if(insight.type === 'critical') {
+                        colorClass = 'bg-red-50 border-red-100 text-red-800';
+                        icon = '⚠️';
+                    }
+                    if(insight.type === 'success') {
+                        colorClass = 'bg-green-50 border-green-100 text-green-800';
+                        icon = '✅';
+                    }
+                    
+                    insightsGrid.innerHTML += `
+                        <div class="p-5 rounded-xl border ${colorClass} shadow-sm flex flex-col justify-between h-full transition hover:-translate-y-1">
+                            <div>
+                                <h4 class="font-bold text-xs uppercase opacity-70 mb-2 tracking-wider flex items-center gap-2">
+                                    ${icon} ${insight.title}
+                                </h4>
+                                <p class="font-bold text-lg leading-tight">${insight.text}</p>
+                            </div>
+                        </div>
+                    `;
+                });
+            } else {
+                insightsPanel.classList.add('hidden');
+            }
 
             // Urgent Table
             const tbody = document.getElementById('urgentTableBody');
@@ -471,28 +527,69 @@
             });
         }
 
-        // --- 5. Distribution Chart (WAS MISSING IN YOUR SNIPPET) ---
+        // --- 5. Distribution Chart ---
         function renderDistChart(dist) {
             const ctx = document.getElementById('distChart').getContext('2d');
             if (distChart) distChart.destroy();
 
             distChart = new Chart(ctx, {
-                type: 'bar',
+                type: 'doughnut', // Changed to Doughnut for variety
                 data: {
                     labels: ['1 ⭐', '2 ⭐', '3 ⭐', '4 ⭐', '5 ⭐'],
                     datasets: [{
                         label: 'Reviews',
                         data: [dist['1'], dist['2'], dist['3'], dist['4'], dist['5']],
                         backgroundColor: ['#ef4444', '#f97316', '#eab308', '#84cc16', '#22c55e'],
-                        borderRadius: 4
+                        borderWidth: 0,
+                        hoverOffset: 4
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    indexAxis: 'y',
-                    plugins: { legend: { display: false } },
-                    scales: { x: { grid: { display: false } } }
+                    plugins: { 
+                        legend: { position: 'right' } 
+                    },
+                    cutout: '70%'
+                }
+            });
+        }
+
+        function renderCategoryChart(catData) {
+            const ctx = document.getElementById('categoryChart').getContext('2d');
+            if (categoryChart) categoryChart.destroy();
+
+            if (!catData || catData.labels.length === 0) return;
+
+            categoryChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: catData.labels,
+                    datasets: [{
+                        label: 'Volume of Issues',
+                        data: catData.data,
+                        backgroundColor: [
+                            '#3b82f6', // Blue
+                            '#10b981', // Green
+                            '#f59e0b', // Yellow
+                            '#8b5cf6', // Purple
+                            '#ec4899', // Pink
+                            '#64748b'  // Slate (General)
+                        ],
+                        borderRadius: 6,
+                        barThickness: 40
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { 
+                        legend: { display: false } 
+                    },
+                    scales: {
+                        y: { beginAtZero: true, grid: { borderDash: [2, 2] } },
+                        x: { grid: { display: false } }
+                    }
                 }
             });
         }
